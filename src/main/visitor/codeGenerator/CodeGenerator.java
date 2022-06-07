@@ -320,9 +320,8 @@ public class CodeGenerator extends Visitor<String> {
                 addCommand("invokespecial java/lang/Object/<init>()V");
             }
             else{
-                String parentClassName = currentClass.getParentClassName().getName();
                 addCommand("aload 0");
-                addCommand("invokespecial " + parentClassName + "/<init>()V");
+                addCommand("invokespecial " + currentClass.getParentClassName().getName() + "/<init>()V");
             }
 
             for(FieldDeclaration field : currentClass.getFields()){
@@ -1092,7 +1091,7 @@ public class CodeGenerator extends Visitor<String> {
 
     @Override
     public String visit(IntValue intValue) {
-        //todo
+        //todo : done
         return "ldc " + intValue.getConstant();
     }
 
