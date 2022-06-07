@@ -377,7 +377,26 @@ public class CodeGenerator extends Visitor<String> {
 
     @Override
     public String visit(VariableDeclaration variableDeclaration) {
-        //todo
+        //todo : done
+        int slot_number = getSlotOf(variableDeclaration.getVarName().getName());
+        Type type = variableDeclaration.getType();
+
+        if(type instanceof IntType || type instanceof BoolType){
+            addCommand("ldc 0");
+            if(type instanceof IntType)
+                addCommand("invokestatic java/lang/Integer/valueOf(I)Ljava/lang/Integer;");
+            else if(type instanceof BoolType)
+                addCommand("invokestatic java/lang/Boolean/valueOf(Z)Ljava/lang/Boolean;");
+            addCommand("astore " + slot_number);
+        }
+        else if(type instanceof ClassType || type instanceof FptrType){
+            addCommand("aconst_null");
+            addCommand("astore " + slot_number);
+        }
+        else
+            addCommand("astore " + slot_number);
+
+
         return null;
     }
 
