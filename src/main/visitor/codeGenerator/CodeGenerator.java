@@ -462,9 +462,9 @@ public class CodeGenerator extends Visitor<String> {
         Type argument_type = print.getArg().accept(expressionTypeChecker);
         addCommand(print.getArg().accept(this));
         if (argument_type instanceof IntType)
-            addCommand("invokevirtual java/io/PrintStream/print(I)V");
+            addCommand("invokevirtual java/io/PrintStream/println(I)V");
         if (argument_type instanceof BoolType)
-            addCommand("invokevirtual java/io/PrintStream/print(Z)V");
+            addCommand("invokevirtual java/io/PrintStream/println(Z)V");
         return null;
     }
 
@@ -1072,7 +1072,7 @@ public class CodeGenerator extends Visitor<String> {
                 cmds += "invokestatic java/lang/Integer/valueOf(I)Ljava/lang/Integer;\n";
         }
         cmds += "invokespecial " + new_class_name + "/<init>(" + arguments_flags + ")V\n";
-        return null;
+        return cmds;
     }
 
     @Override
@@ -1092,14 +1092,14 @@ public class CodeGenerator extends Visitor<String> {
     @Override
     public String visit(IntValue intValue) {
         //todo : done
-        return "ldc " + intValue.getConstant();
+        return "ldc " + intValue.getConstant() + "\n";
     }
 
     @Override
     public String visit(BoolValue boolValue) {
         //todo : done
         int boolIntVal = (boolValue.getConstant()) ? 1 : 0;
-        return "ldc " + boolIntVal;
+        return "ldc " + boolIntVal + "\n";
     }
 
 }
