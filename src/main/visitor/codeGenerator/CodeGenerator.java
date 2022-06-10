@@ -44,6 +44,7 @@ public class CodeGenerator extends Visitor<String> {
 
     private int labelCount;
     private int tempCount;
+    String last_after;
 
     public CodeGenerator(Graph<String> classHierarchy) {
         this.classHierarchy = classHierarchy;
@@ -428,11 +429,18 @@ public class CodeGenerator extends Visitor<String> {
         //todo: done
         String false_label = getNewLabel();
         String after = getNewLabel();
+        last_after = after;
         addCommand(conditionalStmt.getCondition().accept(this));
         addCommand("ifeq " + false_label);
         conditionalStmt.getThenBody().accept(this);
         addCommand("goto " + after);
         addCommand(false_label + ":");
+
+        for (ElsifStmt elsif_stmt : conditionalStmt.getElsif())
+        {
+            elsif_stmt.accept(this);
+        }
+
         if (conditionalStmt.getElseBody() != null)
             conditionalStmt.getElseBody().accept(this);
         addCommand(after + ":");
@@ -441,7 +449,13 @@ public class CodeGenerator extends Visitor<String> {
 
     @Override
     public String visit(ElsifStmt elsifStmt) {
-        //todo
+        //todo: done
+        String false_label = getNewLabel();
+        addCommand(elsifStmt.getCondition().accept(this));
+        addCommand("ifeq " + false_label);
+        elsifStmt.getThenBody().accept(this);
+        addCommand("goto " + this.last_after);
+        addCommand(false_label + ":");
         return null;
     }
 
@@ -494,7 +508,7 @@ public class CodeGenerator extends Visitor<String> {
 
     @Override
     public String visit(TernaryExpression ternaryExpression) {
-        //todo
+        //todo : done
         String cmds = "";
         String false_label = getNewLabel();
         String after = getNewLabel();
@@ -511,6 +525,7 @@ public class CodeGenerator extends Visitor<String> {
     @Override
     public String visit(RangeExpression rangeExpression) {
         //todo
+
         return null;
     }
 
