@@ -495,7 +495,17 @@ public class CodeGenerator extends Visitor<String> {
     @Override
     public String visit(TernaryExpression ternaryExpression) {
         //todo
-        return null;
+        String cmds = "";
+        String false_label = getNewLabel();
+        String after = getNewLabel();
+        addCommand(ternaryExpression.getCondition().accept(this));
+        cmds += "ifeq " + false_label + "\n";
+        cmds += ternaryExpression.getTrueExpression().accept(this) + "\n";
+        cmds += "goto " + after + "\n";
+        cmds += false_label + ":" + "\n";
+        cmds += ternaryExpression.getFalseExpression().accept(this) + "\n";
+        cmds += after + ":"+ "\n";
+        return cmds;
     }
 
     @Override
