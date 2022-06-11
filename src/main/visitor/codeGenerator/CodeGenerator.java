@@ -357,7 +357,7 @@ public class CodeGenerator extends Visitor<String> {
             for(ArgPair arg : methodDeclaration.getArgs()){
                 method_decl_header += "L" + makeTypeFlag(arg.getVariableDeclaration().getType()) + ";";
             }
-            if (methodDeclaration.getReturnType() instanceof NullType)
+            if (methodDeclaration.getReturnType() instanceof VoidType)
                 method_decl_header += ")V";
             else
                 method_decl_header += ")L"  + makeTypeFlag(methodDeclaration.getReturnType()) + ";";
