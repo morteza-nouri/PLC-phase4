@@ -52,6 +52,7 @@ public class CodeGenerator extends Visitor<String> {
 
     Program current_program;
 
+
     public CodeGenerator(Graph<String> classHierarchy) {
         this.classHierarchy = classHierarchy;
         this.expressionTypeChecker = new ExpressionTypeChecker(classHierarchy);
@@ -257,6 +258,7 @@ public class CodeGenerator extends Visitor<String> {
             }
             else{
                 addCommand("aload 0");
+                this.array_size = 1000;
                 init_array((ArrayType) feild_type);
                 addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
             }
@@ -273,7 +275,7 @@ public class CodeGenerator extends Visitor<String> {
         addCommand("invokespecial java/util/ArrayList/<init>()V");
 
 
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < this.array_size; i++) {
             addCommand("dup");
             if(listType.getType() instanceof ClassType || listType.getType() instanceof FptrType){
                 addCommand("aconst_null");
@@ -294,8 +296,6 @@ public class CodeGenerator extends Visitor<String> {
 
             addCommand("pop");
         }
-
-
 
         addCommand("invokespecial Array/<init>(Ljava/util/ArrayList;)V");
     }
@@ -439,7 +439,7 @@ public class CodeGenerator extends Visitor<String> {
             addCommand("astore " + slot_number);
         }
         else {
-
+            this.array_size = 1000;
             init_array((ArrayType) type);
             addCommand("astore " + slot_number);
         }
@@ -1121,6 +1121,8 @@ public class CodeGenerator extends Visitor<String> {
 
         return cmds;
     }
+
+    private int array_size;
 
     @Override
     public String visit(MethodCall methodCall)
