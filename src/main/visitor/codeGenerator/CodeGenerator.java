@@ -1,5 +1,6 @@
 package main.visitor.codeGenerator;
 
+import jas.Var;
 import main.ast.nodes.Program;
 import main.ast.nodes.declaration.classDec.ClassDeclaration;
 import main.ast.nodes.declaration.classDec.classMembersDec.ConstructorDeclaration;
@@ -166,6 +167,13 @@ public class CodeGenerator extends Visitor<String> {
 
         //using .field, add global variables as static fields to the class
 
+        if (program.getGlobalVariables().size() > 0) {
+            ClassDeclaration globalClass = new ClassDeclaration(new Identifier("Global"));
+            for (VariableDeclaration varDec : program.getGlobalVariables()) {
+                globalClass.addField(new FieldDeclaration(varDec, false));
+            }
+            program.addClass(globalClass);
+        }
         for(ClassDeclaration classDeclaration : program.getClasses()) {
             this.expressionTypeChecker.setCurrentClass(classDeclaration);
             this.currentClass = classDeclaration;
@@ -416,7 +424,10 @@ public class CodeGenerator extends Visitor<String> {
         String field_name = fieldDeclaration.getVarDeclaration().getVarName().getName();
         Type feild_type = fieldDeclaration.getVarDeclaration().getType();
         String flag = makeTypeFlag(feild_type);
-        addCommand(".field " + field_name + " L" + flag + ";");
+        if (this.currentClass.getClassName().getName().equals("Global"))
+            addCommand(".field " + "public static " + field_name + " L" + flag + ";");
+        else
+            addCommand(".field " + field_name + " L" + flag + ";");
         return null;
     }
 
