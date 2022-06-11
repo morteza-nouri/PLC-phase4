@@ -30,8 +30,12 @@ import main.symbolTable.utils.graph.Graph;
 import main.util.ArgPair;
 import main.visitor.Visitor;
 import main.visitor.typeChecker.ExpressionTypeChecker;
+import org.w3c.dom.ranges.Range;
+import org.w3c.dom.ranges.RangeException;
 
+import java.awt.font.NumericShaper;
 import java.io.*;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 
 public class CodeGenerator extends Visitor<String> {
@@ -45,6 +49,8 @@ public class CodeGenerator extends Visitor<String> {
     private int labelCount;
     private int tempCount;
     String last_after;
+
+    Program current_program;
 
     public CodeGenerator(Graph<String> classHierarchy) {
         this.classHierarchy = classHierarchy;
@@ -156,6 +162,7 @@ public class CodeGenerator extends Visitor<String> {
     public String visit(Program program) {
         //todo
         //generate new class for global variables
+
         //using .field, add global variables as static fields to the class
 
         for(ClassDeclaration classDeclaration : program.getClasses()) {
@@ -163,6 +170,8 @@ public class CodeGenerator extends Visitor<String> {
             this.currentClass = classDeclaration;
             classDeclaration.accept(this);
         }
+
+
         return null;
     }
 
@@ -248,11 +257,47 @@ public class CodeGenerator extends Visitor<String> {
             }
             else{
                 addCommand("aload 0");
+                init_array((ArrayType) feild_type);
                 addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
             }
         }
         addCommand("return");
         addCommand(".end method");
+    }
+
+    private void init_array(ArrayType listType) {
+        addCommand("new Array");
+        addCommand("dup");
+        addCommand("new java/util/ArrayList");
+        addCommand("dup");
+        addCommand("invokespecial java/util/ArrayList/<init>()V");
+
+
+        for (int i = 0; i < 100; i++) {
+            addCommand("dup");
+            if(listType.getType() instanceof ClassType || listType.getType() instanceof FptrType){
+                addCommand("aconst_null");
+                addCommand("invokevirtual java/util/ArrayList/add(Ljava/lang/Object;)Z");
+            }
+            else if(listType.getType() instanceof IntType || listType.getType() instanceof BoolType){
+                addCommand("ldc 0");
+                if(listType.getType() instanceof IntType)
+                    addCommand("invokestatic java/lang/Integer/valueOf(I)Ljava/lang/Integer;");
+                if(listType.getType() instanceof BoolType)
+                    addCommand("invokestatic java/lang/Boolean/valueOf(Z)Ljava/lang/Boolean;");
+                addCommand("invokevirtual java/util/ArrayList/add(Ljava/lang/Object;)Z");
+            }
+            else{
+                init_array((ArrayType) listType.getType());
+                addCommand("invokevirtual java/util/ArrayList/add(Ljava/lang/Object;)Z");
+            }
+
+            addCommand("pop");
+        }
+
+
+
+        addCommand("invokespecial Array/<init>(Ljava/util/ArrayList;)V");
     }
 
     // Not done yet
@@ -393,8 +438,11 @@ public class CodeGenerator extends Visitor<String> {
             addCommand("aconst_null");
             addCommand("astore " + slot_number);
         }
-        else
+        else {
+
+            init_array((ArrayType) type);
             addCommand("astore " + slot_number);
+        }
 
 
         return null;
@@ -503,7 +551,60 @@ public class CodeGenerator extends Visitor<String> {
     @Override
     public String visit(EachStmt eachStmt) {
         //todo
+
+        int tempIndex = getSlotOf("");
+        int iteratorSlot = getSlotOf(eachStmt.getVariable().getName());
+        Type iteratorType = eachStmt.getVariable().accept(expressionTypeChecker);
+
+        ArrayType listType = (ArrayType) eachStmt.getList().accept(expressionTypeChecker);
+        int listSize = listType.getDimensions().size();
+
+        String labelStart = getNewLabel();
+        String labelAfter = getNewLabel();
+        String labelUpdate = getNewLabel();
+
+
+        addCommand(eachStmt.getList().accept(this));
+
+        addCommand("ldc 0");
+        addCommand("istore " + tempIndex);
+
+        addCommand(labelStart + ":");
+
+        addCommand("iload " + tempIndex);
+        addCommand("ldc " + listSize);
+        addCommand("if_icmpge " + labelAfter);
+
+        addCommand("dup");
+
+        addCommand("iload " + tempIndex);
+        addCommand("invokevirtual Array/getElement(I)Ljava/lang/Object;\n");
+        addCommand("checkcast " + makeTypeFlag(iteratorType) + "\n");
+        addCommand("astore " + iteratorSlot);
+
+        eachStmt.getBody().accept(this);
+
+
+        addCommand(labelUpdate + ":");
+        addCommand("iload " + tempIndex);
+        addCommand("ldc 1");
+        addCommand("iadd");
+        addCommand("istore " + tempIndex);
+
+        addCommand("goto " + labelStart);
+        addCommand(labelAfter + ":");
+        addCommand("pop");
+
         return null;
+    }
+
+    @Override
+    public String visit(RangeExpression rangeExpression) {
+        //todo
+        String cmds = "";
+        cmds += rangeExpression.getRightExpression().accept(this);
+        cmds += rangeExpression.getLeftExpression().accept(this);
+        return cmds;
     }
 
     @Override
@@ -522,12 +623,7 @@ public class CodeGenerator extends Visitor<String> {
         return cmds;
     }
 
-    @Override
-    public String visit(RangeExpression rangeExpression) {
-        //todo
 
-        return null;
-    }
 
     // Probably Done. Needs A lot of changes
     @Override
@@ -625,7 +721,7 @@ public class CodeGenerator extends Visitor<String> {
             Type secondType = binaryExpression.getSecondOperand().accept(expressionTypeChecker);
             String secondOperandCommands = binaryExpression.getSecondOperand().accept(this);
             if(firstType instanceof ArrayType) {
-                secondOperandCommands = "new List\ndup\n" + secondOperandCommands + "invokespecial List/<init>(LList;)V\n";
+                secondOperandCommands = "new Array\ndup\n" + secondOperandCommands + "invokespecial Array/<init>(LList;)V\n";
             }
 
             if(secondType instanceof IntType)
@@ -651,11 +747,11 @@ public class CodeGenerator extends Visitor<String> {
                 cmds += instance.accept(this);
                 cmds += index.accept(this);
                 cmds += secondOperandCommands;
-                cmds += "invokevirtual List/setElement(ILjava/lang/Object;)V\n";
+                cmds += "invokevirtual Array/setElement(ILjava/lang/Object;)V\n";
 
                 cmds += instance.accept(this);
                 cmds += index.accept(this);
-                cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+                cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
                 cmds += "checkcast " + makeTypeFlag(secondType) + "\n";
                 if (secondType instanceof IntType)
                     cmds += "invokevirtual java/lang/Integer/intValue()I\n";
@@ -674,11 +770,11 @@ public class CodeGenerator extends Visitor<String> {
                     cmds += instance.accept(this);
                     cmds += "ldc " + index + "\n";
                     cmds += secondOperandCommands;
-                    cmds += "invokevirtual List/setElement(ILjava/lang/Object;)V\n";
+                    cmds += "invokevirtual Array/setElement(ILjava/lang/Object;)V\n";
 
                     cmds += instance.accept(this);
                     cmds += "ldc " + index + "\n";
-                    cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+                    cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
                     cmds += "checkcast " + makeTypeFlag(secondType) + "\n";
                     if (secondType instanceof IntType)
                         cmds += "invokevirtual java/lang/Integer/intValue()I\n";
@@ -753,7 +849,7 @@ public class CodeGenerator extends Visitor<String> {
                 cmds += instance.accept(this);
                 cmds += index.accept(this);
 
-                cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+                cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
                 cmds += "checkcast " + makeTypeFlag(memberType) + "\n";
                 cmds += "invokevirtual java/lang/Integer/intValue()I\n";
                 cmds += "ldc 1\n";
@@ -766,12 +862,12 @@ public class CodeGenerator extends Visitor<String> {
 
                 cmds += "invokestatic java/lang/Integer/valueOf(I)Ljava/lang/Integer;\n";
 
-                cmds += "invokevirtual List/setElement(ILjava/lang/Object;)V\n";
+                cmds += "invokevirtual Array/setElement(ILjava/lang/Object;)V\n";
 
                 cmds += instance.accept(this);
                 cmds += index.accept(this);
 
-                cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+                cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
                 cmds += "checkcast " + makeTypeFlag(memberType) + "\n";
                 cmds += "invokevirtual java/lang/Integer/intValue()I\n";
             }
@@ -788,7 +884,7 @@ public class CodeGenerator extends Visitor<String> {
                     cmds += instance.accept(this);
                     cmds += "ldc " + index + "\n";
 
-                    cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+                    cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
                     cmds += "checkcast " + makeTypeFlag(memberType) + "\n";
                     cmds += "invokevirtual java/lang/Integer/intValue()I\n";
                     cmds += "ldc 1\n";
@@ -800,10 +896,10 @@ public class CodeGenerator extends Visitor<String> {
 
 
                     cmds += "invokestatic java/lang/Integer/valueOf(I)Ljava/lang/Integer;\n";
-                    cmds += "invokevirtual List/setElement(ILjava/lang/Object;)V\n";
+                    cmds += "invokevirtual Array/setElement(ILjava/lang/Object;)V\n";
                     cmds += instance.accept(this);
                     cmds += "ldc " + index + "\n";
-                    cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+                    cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
                     cmds += "checkcast " + makeTypeFlag(memberType) + "\n";
                     cmds += "invokevirtual java/lang/Integer/intValue()I\n";
                 }
@@ -855,7 +951,7 @@ public class CodeGenerator extends Visitor<String> {
                 cmds += instance.accept(this);
                 cmds += index.accept(this);
 
-                cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+                cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
                 cmds += "checkcast " + makeTypeFlag(memberType) + "\n";
                 cmds += "invokevirtual java/lang/Integer/intValue()I\n";
 
@@ -865,7 +961,7 @@ public class CodeGenerator extends Visitor<String> {
                 cmds += instance.accept(this);
                 cmds += index.accept(this);
 
-                cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+                cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
                 cmds += "checkcast " + makeTypeFlag(memberType) + "\n";
                 cmds += "invokevirtual java/lang/Integer/intValue()I\n";
                 cmds += "ldc 1\n";
@@ -878,7 +974,7 @@ public class CodeGenerator extends Visitor<String> {
 
                 cmds += "invokestatic java/lang/Integer/valueOf(I)Ljava/lang/Integer;\n";
 
-                cmds += "invokevirtual List/setElement(ILjava/lang/Object;)V\n";
+                cmds += "invokevirtual Array/setElement(ILjava/lang/Object;)V\n";
             }
             else if(unaryExpression.getOperand() instanceof ObjectMemberAccess) {
                 Expression instance = ((ObjectMemberAccess) unaryExpression.getOperand()).getInstance();
@@ -892,7 +988,7 @@ public class CodeGenerator extends Visitor<String> {
                     cmds += instance.accept(this);
                     cmds += "ldc " + index + "\n";
 
-                    cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+                    cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
                     cmds += "checkcast " + makeTypeFlag(memberType) + "\n";
                     cmds += "invokevirtual java/lang/Integer/intValue()I\n";
 
@@ -902,7 +998,7 @@ public class CodeGenerator extends Visitor<String> {
                     cmds += instance.accept(this);
                     cmds += "ldc " + index + "\n";
 
-                    cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+                    cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
                     cmds += "checkcast " + makeTypeFlag(memberType) + "\n";
                     cmds += "invokevirtual java/lang/Integer/intValue()I\n";
                     cmds += "ldc 1\n";
@@ -915,7 +1011,7 @@ public class CodeGenerator extends Visitor<String> {
 
                     cmds += "invokestatic java/lang/Integer/valueOf(I)Ljava/lang/Integer;\n";
 
-                    cmds += "invokevirtual List/setElement(ILjava/lang/Object;)V\n";
+                    cmds += "invokevirtual Array/setElement(ILjava/lang/Object;)V\n";
                 }
                 else if(instance_type instanceof ClassType) {
                     String class_name = ((ClassType)instance_type).getClassName().getName();
@@ -978,7 +1074,7 @@ public class CodeGenerator extends Visitor<String> {
             int index = 0;
             cmds += objectMemberAccess.getInstance().accept(this);
             cmds += "ldc " + index + "\n";
-            cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+            cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
 
             cmds += "checkcast " + makeTypeFlag(obj_type) + "\n";
 
@@ -1015,7 +1111,7 @@ public class CodeGenerator extends Visitor<String> {
         Type type = arrayAccessByIndex.accept(expressionTypeChecker);
         cmds += arrayAccessByIndex.getInstance().accept(this);
         cmds += arrayAccessByIndex.getIndex().accept(this);
-        cmds += "invokevirtual List/getElement(I)Ljava/lang/Object;\n";
+        cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
         cmds += "checkcast " + makeTypeFlag(type) + "\n";
 
         if (type instanceof BoolType)
@@ -1027,7 +1123,8 @@ public class CodeGenerator extends Visitor<String> {
     }
 
     @Override
-    public String visit(MethodCall methodCall) {
+    public String visit(MethodCall methodCall)
+    {
         //todo : done
         ArrayList<Expression> args = methodCall.getArgs();
         Type retType = ((FptrType) methodCall.getInstance().accept(expressionTypeChecker)).getReturnType();
@@ -1045,7 +1142,7 @@ public class CodeGenerator extends Visitor<String> {
             Type arg_type = arg.accept(expressionTypeChecker);
 
             if(arg_type instanceof ArrayType) {
-                cmds += "new List\n";
+                cmds += "new Array\n";
                 cmds += "dup\n";
             }
 
@@ -1055,7 +1152,7 @@ public class CodeGenerator extends Visitor<String> {
                 cmds += "invokestatic java/lang/Integer/valueOf(I)Ljava/lang/Integer;\n";
 
             else if(arg_type instanceof ArrayType)
-                cmds += "invokespecial List/<init>(LList;)V\n";
+                cmds += "invokespecial Array/<init>(LList;)V\n";
 
             else if(arg_type instanceof BoolType)
                 cmds += "invokestatic java/lang/Boolean/valueOf(Z)Ljava/lang/Boolean;\n";
