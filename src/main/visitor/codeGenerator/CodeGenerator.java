@@ -38,6 +38,8 @@ import java.awt.font.NumericShaper;
 import java.io.*;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 public class CodeGenerator extends Visitor<String> {
     ExpressionTypeChecker expressionTypeChecker;
@@ -46,7 +48,8 @@ public class CodeGenerator extends Visitor<String> {
     private FileWriter currentFile;
     private ClassDeclaration currentClass;
     private MethodDeclaration currentMethod;
-
+    private Set<String> globalVariables = new HashSet<String>();
+    private ClassDeclaration globalClass;
     private int labelCount;
     private int tempCount;
     String last_after;
@@ -170,9 +173,11 @@ public class CodeGenerator extends Visitor<String> {
         if (program.getGlobalVariables().size() > 0) {
             ClassDeclaration globalClass = new ClassDeclaration(new Identifier("Global"));
             for (VariableDeclaration varDec : program.getGlobalVariables()) {
+                this.globalVariables.add(varDec.getVarName().getName());
                 globalClass.addField(new FieldDeclaration(varDec, false));
             }
             program.addClass(globalClass);
+            this.globalClass = globalClass;
         }
         for(ClassDeclaration classDeclaration : program.getClasses()) {
             this.expressionTypeChecker.setCurrentClass(classDeclaration);
@@ -255,20 +260,28 @@ public class CodeGenerator extends Visitor<String> {
                 else if(feild_type instanceof IntType)
                     addCommand("invokestatic java/lang/Integer/valueOf(I)Ljava/lang/Integer;");
 
-
-                addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+                if (this.currentClass.getClassName().getName().equals("Global"))
+                    addCommand("putstatic " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+                else
+                    addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
             }
             else if(feild_type instanceof FptrType || feild_type instanceof ClassType)
             {
                 addCommand("aload 0");
                 addCommand("aconst_null");
-                addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+                if (this.currentClass.getClassName().getName().equals("Global"))
+                    addCommand("putstatic " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+                else
+                    addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
             }
             else{
                 addCommand("aload 0");
                 this.array_size = 1000;
                 init_array((ArrayType) feild_type);
-                addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+                if (this.currentClass.getClassName().getName().equals("Global"))
+                    addCommand("putstatic " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+                else
+                    addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
             }
         }
         addCommand("return");
@@ -464,7 +477,8 @@ public class CodeGenerator extends Visitor<String> {
         //todo: done
         BinaryExpression assign_expression = new BinaryExpression(assignmentStmt.getlValue(), assignmentStmt.getrValue(), BinaryOperator.assign);
         addCommand(assign_expression.accept(this));
-        addCommand("pop");
+//        addCommand("pop");
+
         return null;
     }
 
@@ -743,14 +757,21 @@ public class CodeGenerator extends Visitor<String> {
 
             if(binaryExpression.getFirstOperand() instanceof Identifier) {
                 Identifier identifier = (Identifier)binaryExpression.getFirstOperand();
-                int slot = getSlotOf(identifier.getName());
-                cmds += secondOperandCommands;
-                cmds += "astore " + slot + "\n";
-                cmds += "aload " + slot + "\n";
-                if (secondType instanceof IntType)
-                    cmds += "invokevirtual java/lang/Integer/intValue()I\n";
-                if (secondType instanceof BoolType)
-                    cmds += "invokevirtual java/lang/Boolean/booleanValue()Z\n";
+                if(this.globalVariables.contains(identifier.getName())) {
+                    cmds += secondOperandCommands;
+                    cmds += "putstatic  Global/" + identifier.getName()+ " L" + makeTypeFlag(secondType) + ";\n";
+//                    cmds += "getstatic  Global/" + identifier.getName()+ " L" + makeTypeFlag(secondType) + ";\n";
+                }
+                else {
+                    int slot = getSlotOf(identifier.getName());
+                    cmds += secondOperandCommands;
+                    cmds += "astore " + slot + "\n";
+//                    cmds += "aload " + slot + "\n";
+                }
+//                if (secondType instanceof IntType)
+//                    cmds += "invokevirtual java/lang/Integer/intValue()I\n";
+//                if (secondType instanceof BoolType)
+//                    cmds += "invokevirtual java/lang/Boolean/booleanValue()Z\n";
             }
             else if(binaryExpression.getFirstOperand() instanceof ArrayAccessByIndex) {
                 Expression instance = ((ArrayAccessByIndex) binaryExpression.getFirstOperand()).getInstance();
@@ -783,9 +804,9 @@ public class CodeGenerator extends Visitor<String> {
                     cmds += secondOperandCommands;
                     cmds += "invokevirtual Array/setElement(ILjava/lang/Object;)V\n";
 
-                    cmds += instance.accept(this);
-                    cmds += "ldc " + index + "\n";
-                    cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
+//                    cmds += instance.accept(this);
+//                    cmds += "ldc " + index + "\n";
+//                    cmds += "invokevirtual Array/getElement(I)Ljava/lang/Object;\n";
                     cmds += "checkcast " + makeTypeFlag(secondType) + "\n";
                     if (secondType instanceof IntType)
                         cmds += "invokevirtual java/lang/Integer/intValue()I\n";
@@ -799,12 +820,12 @@ public class CodeGenerator extends Visitor<String> {
                     cmds += secondOperandCommands;
                     cmds += "putfield " + class_name + "/" + memberName + " L" + makeTypeFlag(memberType) + ";\n";
 
-                    cmds += instance.accept(this);
-                    cmds += "getfield " + class_name + "/" + memberName + " L" + makeTypeFlag(memberType) + ";\n";
-                    if (secondType instanceof IntType)
-                        cmds += "invokevirtual java/lang/Integer/intValue()I\n";
-                    if (secondType instanceof BoolType)
-                        cmds += "invokevirtual java/lang/Boolean/booleanValue()Z\n";
+//                    cmds += instance.accept(this);
+//                    cmds += "getfield " + class_name + "/" + memberName + " L" + makeTypeFlag(memberType) + ";\n";
+//                    if (secondType instanceof IntType)
+//                        cmds += "invokevirtual java/lang/Integer/intValue()I\n";
+//                    if (secondType instanceof BoolType)
+//                        cmds += "invokevirtual java/lang/Boolean/booleanValue()Z\n";
                 }
             }
         }
@@ -1103,10 +1124,14 @@ public class CodeGenerator extends Visitor<String> {
         //todo : Done
         String cmds = "";
         String name = identifier.getName();
-        int slot_number = getSlotOf(name);
         Type type = identifier.accept(expressionTypeChecker);
-        cmds += "aload " + slot_number + "\n";
-
+        if (this.globalVariables.contains(name)) {
+            cmds += "getstatic  Global/" + identifier.getName()+ " L" + makeTypeFlag(type) + ";\n";
+        }
+        else {
+            int slot_number = getSlotOf(name);
+            cmds += "aload " + slot_number + "\n";
+        }
         if(type instanceof BoolType)
             cmds += "invokevirtual java/lang/Boolean/booleanValue()Z\n";
         else if(type instanceof IntType)
