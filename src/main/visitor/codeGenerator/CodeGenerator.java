@@ -174,10 +174,11 @@ public class CodeGenerator extends Visitor<String> {
             ClassDeclaration globalClass = new ClassDeclaration(new Identifier("Global"));
             for (VariableDeclaration varDec : program.getGlobalVariables()) {
                 this.globalVariables.add(varDec.getVarName().getName());
-                globalClass.addField(new FieldDeclaration(varDec, false));
+                globalClass.addField(new FieldDeclaration(varDec, true));
             }
-            program.addClass(globalClass);
-            this.globalClass = globalClass;
+            this.expressionTypeChecker.setCurrentClass(globalClass);
+            this.currentClass = globalClass;
+            globalClass.accept(this);
         }
         for(ClassDeclaration classDeclaration : program.getClasses()) {
             this.expressionTypeChecker.setCurrentClass(classDeclaration);
@@ -220,6 +221,8 @@ public class CodeGenerator extends Visitor<String> {
             this.expressionTypeChecker.setCurrentMethod(classDeclaration.getConstructor());
             classDeclaration.getConstructor().accept(this);
         }
+        else if (classDeclaration.getClassName().getName().equals("Global"))
+            initializeGlobal();
         else
             defaultConstructorDecl();
 
@@ -232,15 +235,62 @@ public class CodeGenerator extends Visitor<String> {
 
         return null;
     }
+    
+    private void initializeGlobal() {
+        addCommand(".method public <init>()V");
+        addCommand(".limit stack 128");
+        addCommand(".limit locals 128");
+        addCommand("aload_0");
+        addCommand("invokespecial java/lang/Object/<init>()V");
+        addCommand("return");
+        addCommand(".end method");
+
+        addCommand(".method static <clinit>()V");
+        addCommand(".limit stack 128");
+        addCommand(".limit locals 128");
+
+        String class_name = currentClass.getClassName().getName();
+        for(FieldDeclaration field : currentClass.getFields()) {
+            String field_name = field.getVarDeclaration().getVarName().getName();
+            Type feild_type = field.getVarDeclaration().getType();
+
+            if(feild_type instanceof IntType || feild_type instanceof BoolType) {
+//                addCommand("aload 0");
+//                addCommand("ldc 0");
+                addCommand("iconst_0");
+                if(feild_type instanceof BoolType)
+                    addCommand("invokestatic java/lang/Boolean/valueOf(Z)Ljava/lang/Boolean;");
+                else if(feild_type instanceof IntType)
+                    addCommand("invokestatic java/lang/Integer/valueOf(I)Ljava/lang/Integer;");
+
+                addCommand("putstatic " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+            }
+            else if(feild_type instanceof FptrType || feild_type instanceof ClassType)
+            {
+                addCommand("aload 0");
+                addCommand("aconst_null");
+                addCommand("putstatic " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+            }
+            else{
+                addCommand("aload 0");
+                this.array_size = 1000;
+                init_array((ArrayType) feild_type);
+                addCommand("putstatic " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+            }
+        }
+
+        addCommand("return");
+        addCommand(".end method");
+
+    }
 
     // Not Done
     private void defaultConstructorDecl() {
         String class_name = currentClass.getClassName().getName();
-
         addCommand(".method public <init>()V");
         addCommand(".limit stack 128");
         addCommand(".limit locals 128");
-        addCommand("aload 0");
+        addCommand("aload_0");
 
         if (currentClass.getParentClassName() != null)
             addCommand("invokespecial " + currentClass.getParentClassName().getName() + "/<init>()V");
@@ -260,28 +310,19 @@ public class CodeGenerator extends Visitor<String> {
                 else if(feild_type instanceof IntType)
                     addCommand("invokestatic java/lang/Integer/valueOf(I)Ljava/lang/Integer;");
 
-                if (this.currentClass.getClassName().getName().equals("Global"))
-                    addCommand("putstatic " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
-                else
-                    addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+                addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
             }
             else if(feild_type instanceof FptrType || feild_type instanceof ClassType)
             {
                 addCommand("aload 0");
                 addCommand("aconst_null");
-                if (this.currentClass.getClassName().getName().equals("Global"))
-                    addCommand("putstatic " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
-                else
-                    addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+                addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
             }
             else{
                 addCommand("aload 0");
                 this.array_size = 1000;
                 init_array((ArrayType) feild_type);
-                if (this.currentClass.getClassName().getName().equals("Global"))
-                    addCommand("putstatic " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
-                else
-                    addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
+                addCommand("putfield " + class_name + "/" + field_name + " L" + makeTypeFlag(feild_type) + ";\n");
             }
         }
         addCommand("return");
@@ -438,7 +479,7 @@ public class CodeGenerator extends Visitor<String> {
         Type feild_type = fieldDeclaration.getVarDeclaration().getType();
         String flag = makeTypeFlag(feild_type);
         if (this.currentClass.getClassName().getName().equals("Global"))
-            addCommand(".field " + "public static " + field_name + " L" + flag + ";");
+            addCommand(".field " + "static " + field_name + " L" + flag + ";");
         else
             addCommand(".field " + field_name + " L" + flag + ";");
         return null;
